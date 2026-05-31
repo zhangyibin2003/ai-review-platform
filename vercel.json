@@ -1,0 +1,11 @@
+{
+  "experimentalServices": {
+    "ai-review-backend": {
+      "type": "web",
+      "root": "backend",
+      "entrypoint": "main:app",
+      "routePrefix": "/",
+      "buildCommand": "pip install -r requirements.txt"
+    }
+  }
+}
