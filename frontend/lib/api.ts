@@ -1,4 +1,5 @@
 // Use remote backend URL in production (Vercel), local proxy in dev
+// Backend: Render free tier https://ai-review-backend-7iw2.onrender.com
 const API_BASE = process.env.NEXT_PUBLIC_API_URL
   ? `${process.env.NEXT_PUBLIC_API_URL}/api`
   : '/api';
