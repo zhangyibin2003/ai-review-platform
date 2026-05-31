@@ -1,8 +1,19 @@
-// Use remote backend URL in production (Vercel), local proxy in dev
-// Backend: Render free tier https://ai-review-backend-7iw2.onrender.com
-const API_BASE = process.env.NEXT_PUBLIC_API_URL
-  ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-  : '/api';
+// Production backend on Render, local dev uses Next.js proxy
+const PROD_API = 'https://ai-review-backend-7iw2.onrender.com/api';
+const LOCAL_API = '/api';
+
+function getApiUrl(): string {
+  if (typeof window !== 'undefined') {
+    // Client-side: check if we're on localhost
+    return window.location.hostname === 'localhost' ? LOCAL_API : PROD_API;
+  }
+  // Server-side: use env var if set, otherwise production
+  return process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api`
+    : PROD_API;
+}
+
+const API_BASE = getApiUrl();
 
 export function getApiBase(): string {
   return API_BASE;
