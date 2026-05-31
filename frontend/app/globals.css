@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800;
+  }
+}
+
+/* Custom prose for Markdown rendering */
+.prose .katex-display {
+  margin: 1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.prose table {
+  @apply w-full border-collapse;
+}
+
+.prose th {
+  @apply bg-slate-50 font-semibold text-left;
+}
+
+.prose th, .prose td {
+  @apply border border-slate-200 px-3 py-2;
+}
+
+.prose code {
+  @apply bg-slate-100 text-rose-600 px-1.5 py-0.5 rounded text-sm;
+}
+
+.prose pre {
+  @apply bg-slate-800 text-slate-100 p-4 rounded-lg overflow-x-auto;
+}
+
+.prose pre code {
+  @apply bg-transparent text-slate-100 p-0;
+}
+
+.prose blockquote {
+  @apply border-l-4 border-blue-400 pl-4 italic text-slate-600;
+}
+
+.prose h1 { @apply text-2xl font-bold text-slate-800 mt-8 mb-4; }
+.prose h2 { @apply text-xl font-bold text-slate-800 mt-6 mb-3; }
+.prose h3 { @apply text-lg font-semibold text-slate-800 mt-4 mb-2; }
+.prose p { @apply my-2; }
+.prose ul { @apply list-disc list-inside my-2; }
+.prose ol { @apply list-decimal list-inside my-2; }
+.prose li { @apply my-1; }
+.prose a { @apply text-blue-600 hover:underline; }
+.prose strong { @apply font-semibold text-slate-900; }
+.prose hr { @apply my-6 border-slate-200; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }

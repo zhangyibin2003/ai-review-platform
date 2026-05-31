@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ai-review-backend
+    runtime: python
+    region: singapore
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://api.deepseek.com/v1
+      - key: AI_MODEL
+        value: deepseek-chat
+      - key: SECRET_KEY
+        generateValue: true
