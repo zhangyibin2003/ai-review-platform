@@ -1,16 +1,37 @@
+import hashlib
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import HOST, PORT
-from models.db import engine, Base
+from models.db import engine, Base, SessionLocal, User
 from api import auth, courses, notes, questions, quiz
+
+
+def seed_default_user():
+    """Create default demo account if not exists"""
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.username == "demo").first()
+        if not existing:
+            demo = User(
+                username="demo",
+                email="demo@example.com",
+                password_hash=hashlib.sha256("demo123".encode()).hexdigest(),
+                role="teacher",
+            )
+            db.add(demo)
+            db.commit()
+            print("[Seed] Created default user: demo / demo123")
+    finally:
+        db.close()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: create tables
     Base.metadata.create_all(bind=engine)
+    seed_default_user()
     yield
     # Shutdown
     engine.dispose()

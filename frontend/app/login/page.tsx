@@ -122,6 +122,13 @@ export default function LoginPage() {
               <p className="text-sm text-red-500 bg-red-50 p-3 rounded-lg">{error}</p>
             )}
 
+            {!isRegister && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+                演示账号：<code className="bg-blue-100 px-1.5 py-0.5 rounded font-bold">demo</code>
+                &nbsp; 密码：<code className="bg-blue-100 px-1.5 py-0.5 rounded font-bold">demo123</code>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
