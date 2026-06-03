@@ -13,6 +13,7 @@ export interface Course {
   kp_count?: number;
   note_count?: number;
   question_count?: number;
+  example_count?: number;
   created_at: string;
   files?: CourseFile[];
 }
@@ -79,6 +80,17 @@ export interface ErrorBookItem {
   answer: string;
   wrong_count: number;
   last_wrong_at: string;
+}
+
+export interface ExampleProblem {
+  id: number;
+  lecture_id: string | null;
+  stem: string;
+  solution: string;
+  problem_type: string;
+  difficulty: number;
+  order_index: number;
+  created_at: string;
 }
 
 export interface QuizStats {

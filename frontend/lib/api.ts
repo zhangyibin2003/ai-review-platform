@@ -56,8 +56,8 @@ export const courses = {
     if (!res.ok) throw new Error('Upload failed');
     return res.json();
   },
-  generateNotes: (courseId: number) =>
-    request(`/courses/${courseId}/generate-notes`, { method: 'POST' }),
+  generateNotes: (courseId: number, includeExamples?: boolean) =>
+    request(`/courses/${courseId}/generate-notes${includeExamples ? '?include_examples=true' : ''}`, { method: 'POST' }),
   getNotes: (courseId: number) => request(`/courses/${courseId}/notes`),
   getNoteDetail: (courseId: number, noteId: number) =>
     request(`/courses/${courseId}/notes/${noteId}`),
@@ -72,6 +72,14 @@ export const courses = {
     const qs = params.toString();
     return request(`/courses/${courseId}/questions${qs ? `?${qs}` : ''}`);
   },
+  generateExamReview: (courseId: number, includeExamples?: boolean) =>
+    request(`/courses/${courseId}/generate-exam-review${includeExamples ? '?include_examples=true' : ''}`, { method: 'POST' }),
+  getExamples: (courseId: number, lectureId?: string) =>
+    request(`/courses/${courseId}/examples${lectureId ? `?lecture_id=${encodeURIComponent(lectureId)}` : ''}`),
+  getPracticeProblems: (courseId: number) =>
+    request(`/courses/${courseId}/examples/practice`),
+  deleteExamples: (courseId: number) =>
+    request(`/courses/${courseId}/examples`, { method: 'DELETE' }),
 };
 
 // Knowledge & Cases

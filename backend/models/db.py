@@ -53,6 +53,7 @@ class Course(Base):
     knowledge_points = relationship("KnowledgePoint", back_populates="course")
     notes = relationship("Note", back_populates="course")
     questions = relationship("Question", back_populates="course")
+    example_problems = relationship("ExampleProblem", back_populates="course")
 
 
 class CourseFile(Base):
@@ -138,6 +139,21 @@ class Question(Base):
 
     course = relationship("Course", back_populates="questions")
     knowledge_point = relationship("KnowledgePoint", back_populates="questions")
+
+
+class ExampleProblem(Base):
+    __tablename__ = "example_problems"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)
+    lecture_id = Column(String(128), nullable=True)  # NULL for course-wide
+    stem = Column(Text, nullable=False)
+    solution = Column(Text, nullable=False)
+    problem_type = Column(String(32), default="example")
+    difficulty = Column(Integer, default=3)
+    order_index = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    course = relationship("Course", back_populates="example_problems")
 
 
 class QuizAttempt(Base):

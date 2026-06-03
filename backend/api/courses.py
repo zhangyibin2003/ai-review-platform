@@ -1,14 +1,16 @@
 import os
 import uuid
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 
-from models.db import get_db, SessionLocal, Course, CourseFile, KnowledgePoint, Note, User
+from models.db import get_db, SessionLocal, Course, CourseFile, KnowledgePoint, Note, Question, ExampleProblem
 from services.pdf_service import save_upload, get_page_count, extract_text_from_pdf
 from services.note_service import generate_notes_from_pdf, condense_knowledge_points
+from services.example_service import extract_examples_from_pdf, extract_examples_course_wide
+from prompts.note_prompts import NOTE_GENERATION_SYSTEM, NOTE_CONDENSE_SYSTEM, EXAM_REVIEW_SYSTEM
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -18,7 +20,7 @@ class CourseCreate(BaseModel):
     teacher_id: int
 
 
-def _generate_notes_bg(course_id: int, course_name: str, file_path: str, filename: str):
+def _generate_notes_bg(course_id: int, course_name: str, file_path: str, filename: str, include_examples: bool = False):
     """Background task: generate notes and knowledge points for a single PDF file"""
     db = SessionLocal()
     try:
@@ -93,6 +95,42 @@ def _generate_notes_bg(course_id: int, course_name: str, file_path: str, filenam
             print(f"[BG] Error extracting knowledge points: {e}")
             traceback.print_exc()
 
+        # Step 3: Optionally extract example problems
+        if include_examples:
+            try:
+                # Clean up existing examples for this lecture
+                existing_examples = db.query(ExampleProblem).filter(
+                    ExampleProblem.course_id == course_id,
+                    ExampleProblem.lecture_id == filename,
+                ).all()
+                for ex in existing_examples:
+                    db.delete(ex)
+                db.commit()
+
+                loop3 = asyncio.new_event_loop()
+                try:
+                    examples = loop3.run_until_complete(extract_examples_from_pdf(file_path))
+                finally:
+                    loop3.close()
+
+                print(f"[BG] Got {len(examples)} example problems")
+                for i, ex in enumerate(examples):
+                    db_ex = ExampleProblem(
+                        course_id=course_id,
+                        lecture_id=filename,
+                        stem=ex.get("stem", ""),
+                        solution=ex.get("solution", ""),
+                        problem_type=ex.get("problem_type", "example"),
+                        difficulty=ex.get("difficulty", 3),
+                        order_index=i,
+                    )
+                    db.add(db_ex)
+                db.commit()
+                print(f"[BG] Example problems saved: {len(examples)}")
+            except Exception as e:
+                print(f"[BG] Error extracting examples: {e}")
+                traceback.print_exc()
+
         print(f"[BG] Finished notes generation for course {course_id}")
     except Exception as e:
         print(f"[BG] Fatal error in background notes generation: {e}")
@@ -155,6 +193,126 @@ def _generate_questions_bg(course_id: int):
         db.close()
 
 
+def _generate_exam_review_bg(course_id: int, course_name: str, include_examples: bool = False):
+    """Background task: generate course-wide exam review from all PPTs"""
+    db = SessionLocal()
+    try:
+        print(f"[BG] Starting course-wide exam review for course {course_id}")
+
+        # Clean up existing exam review notes
+        existing_review = db.query(Note).filter(
+            Note.course_id == course_id,
+            Note.lecture_id == "课程总复习",
+        ).all()
+        for r in existing_review:
+            db.delete(r)
+        db.commit()
+
+        # Collect all PDF files
+        files = db.query(CourseFile).filter(CourseFile.course_id == course_id).all()
+        if not files:
+            print(f"[BG] No files found for course {course_id}")
+            return
+
+        # Combine text from all PDFs
+        all_text_parts = []
+        for cf in files:
+            try:
+                text = extract_text_from_pdf(cf.file_path)
+                all_text_parts.append(f"## {cf.filename}\n\n{text[:5000]}")
+            except Exception as e:
+                print(f"[BG] Error reading {cf.filename}: {e}")
+
+        combined_text = "\n\n---\n\n".join(all_text_parts)
+
+        import asyncio
+        from services.ai_service import generate_with_system_prompt
+
+        # Generate exam review
+        loop = asyncio.new_event_loop()
+        try:
+            user_prompt = f"课程名称：{course_name}\n\n以下是该课程所有PPT的内容：\n\n{combined_text[:20000]}"
+            review_md = loop.run_until_complete(
+                generate_with_system_prompt(EXAM_REVIEW_SYSTEM, user_prompt, temperature=0.3)
+            )
+        except Exception as e:
+            print(f"[BG] Error generating exam review: {e}")
+            traceback.print_exc()
+            review_md = f"# 考试重点生成失败\n\n错误: {str(e)}"
+        finally:
+            loop.close()
+
+        # Save as note with special lecture_id
+        review_note = Note(
+            course_id=course_id,
+            lecture_id="课程总复习",
+            markdown_content=review_md,
+        )
+        db.add(review_note)
+        db.commit()
+        db.refresh(review_note)
+        print(f"[BG] Exam review note saved: id={review_note.id}")
+
+        # Optionally extract course-wide examples
+        if include_examples:
+            try:
+                # Clean up existing course-wide examples
+                existing_cw = db.query(ExampleProblem).filter(
+                    ExampleProblem.course_id == course_id,
+                    ExampleProblem.lecture_id == None,
+                ).all()
+                for ex in existing_cw:
+                    db.delete(ex)
+
+                existing_cw2 = db.query(ExampleProblem).filter(
+                    ExampleProblem.course_id == course_id,
+                    ExampleProblem.lecture_id == "课程总复习",
+                ).all()
+                for ex in existing_cw2:
+                    db.delete(ex)
+                db.commit()
+
+                # Build (lecture_name, pdf_text) tuples
+                all_texts = []
+                for cf in files:
+                    try:
+                        text = extract_text_from_pdf(cf.file_path)
+                        all_texts.append((cf.filename, text))
+                    except Exception as e:
+                        print(f"[BG] Error reading {cf.filename} for examples: {e}")
+
+                loop2 = asyncio.new_event_loop()
+                try:
+                    examples = loop2.run_until_complete(extract_examples_course_wide(all_texts))
+                finally:
+                    loop2.close()
+
+                print(f"[BG] Got {len(examples)} course-wide example problems")
+                for i, ex in enumerate(examples):
+                    db_ex = ExampleProblem(
+                        course_id=course_id,
+                        lecture_id=ex.get("lecture_id") or "课程总复习",
+                        stem=ex.get("stem", ""),
+                        solution=ex.get("solution", ""),
+                        problem_type=ex.get("problem_type", "example"),
+                        difficulty=ex.get("difficulty", 3),
+                        order_index=i,
+                    )
+                    db.add(db_ex)
+                db.commit()
+                print(f"[BG] Course-wide example problems saved: {len(examples)}")
+            except Exception as e:
+                print(f"[BG] Error extracting course-wide examples: {e}")
+                traceback.print_exc()
+
+        print(f"[BG] Finished exam review for course {course_id}")
+    except Exception as e:
+        print(f"[BG] Fatal error in exam review generation: {e}")
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
 @router.post("")
 def create_course(req: CourseCreate, db: Session = Depends(get_db)):
     course = Course(name=req.name, teacher_id=req.teacher_id)
@@ -193,6 +351,7 @@ def get_course(course_id: int, db: Session = Depends(get_db)):
         "kp_count": len(course.knowledge_points),
         "note_count": len(course.notes),
         "question_count": len(course.questions),
+        "example_count": len(course.example_problems),
         "created_at": str(course.created_at),
     }
 
@@ -233,7 +392,12 @@ async def upload_pdf(
 
 
 @router.post("/{course_id}/generate-notes")
-async def generate_notes(course_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def generate_notes(
+    course_id: int,
+    background_tasks: BackgroundTasks,
+    include_examples: bool = Query(False),
+    db: Session = Depends(get_db),
+):
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
@@ -244,12 +408,13 @@ async def generate_notes(course_id: int, background_tasks: BackgroundTasks, db: 
     # Schedule all files for background processing
     file_count = len(course.files)
     for cf in course.files:
-        background_tasks.add_task(_generate_notes_bg, course_id, course.name, cf.file_path, cf.filename)
+        background_tasks.add_task(_generate_notes_bg, course_id, course.name, cf.file_path, cf.filename, include_examples)
 
     return {
         "message": f"Notes generation started for {file_count} file(s). This may take 2-5 minutes.",
         "status": "processing",
         "file_count": file_count,
+        "include_examples": include_examples,
     }
 
 
@@ -391,3 +556,83 @@ def list_knowledge_points(course_id: int, db: Session = Depends(get_db)):
         }
         for kp in kps
     ]
+
+
+# --- Course-wide exam review ---
+
+@router.post("/{course_id}/generate-exam-review")
+async def generate_exam_review(
+    course_id: int,
+    background_tasks: BackgroundTasks,
+    include_examples: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    if not course.files:
+        raise HTTPException(status_code=400, detail="No PDF files uploaded for this course")
+
+    background_tasks.add_task(_generate_exam_review_bg, course_id, course.name, include_examples)
+
+    return {
+        "message": "Course-wide exam review generation started. This may take 3-6 minutes.",
+        "status": "processing",
+        "include_examples": include_examples,
+    }
+
+
+# --- Example problems ---
+
+@router.get("/{course_id}/examples")
+def get_examples(
+    course_id: int,
+    lecture_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+):
+    """Get example problems with solutions"""
+    query = db.query(ExampleProblem).filter(ExampleProblem.course_id == course_id)
+    if lecture_id:
+        query = query.filter(ExampleProblem.lecture_id == lecture_id)
+    examples = query.order_by(ExampleProblem.order_index).all()
+    return [
+        {
+            "id": e.id,
+            "lecture_id": e.lecture_id,
+            "stem": e.stem,
+            "solution": e.solution,
+            "problem_type": e.problem_type,
+            "difficulty": e.difficulty,
+            "order_index": e.order_index,
+            "created_at": str(e.created_at),
+        }
+        for e in examples
+    ]
+
+
+@router.get("/{course_id}/examples/practice")
+def get_practice_problems(course_id: int, db: Session = Depends(get_db)):
+    """Get example problems WITHOUT solutions (for practice workbook 习题集)"""
+    examples = db.query(ExampleProblem).filter(
+        ExampleProblem.course_id == course_id
+    ).order_by(ExampleProblem.order_index).all()
+    return [
+        {
+            "id": e.id,
+            "lecture_id": e.lecture_id,
+            "stem": e.stem,
+            "problem_type": e.problem_type,
+            "difficulty": e.difficulty,
+            "order_index": e.order_index,
+        }
+        for e in examples
+    ]
+
+
+@router.delete("/{course_id}/examples")
+def delete_all_examples(course_id: int, db: Session = Depends(get_db)):
+    """Delete all example problems for a course"""
+    db.query(ExampleProblem).filter(ExampleProblem.course_id == course_id).delete()
+    db.commit()
+    return {"message": "All example problems deleted"}
