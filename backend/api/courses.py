@@ -391,6 +391,38 @@ async def upload_pdf(
     }
 
 
+@router.delete("/{course_id}/files/{file_id}")
+def delete_file(course_id: int, file_id: int, db: Session = Depends(get_db)):
+    """Delete a single uploaded PDF file and associated data"""
+    course_file = db.query(CourseFile).filter(
+        CourseFile.id == file_id,
+        CourseFile.course_id == course_id,
+    ).first()
+    if not course_file:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    filename = course_file.filename
+    file_path = course_file.file_path
+
+    # Delete associated notes, knowledge points, and examples for this lecture
+    db.query(Note).filter(Note.course_id == course_id, Note.lecture_id == filename).delete()
+    db.query(KnowledgePoint).filter(KnowledgePoint.course_id == course_id, KnowledgePoint.lecture_id == filename).delete()
+    db.query(ExampleProblem).filter(ExampleProblem.course_id == course_id, ExampleProblem.lecture_id == filename).delete()
+
+    # Delete the physical file
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        print(f"Warning: could not delete file {file_path}: {e}")
+
+    # Delete the database record
+    db.delete(course_file)
+    db.commit()
+
+    return {"message": f"File '{filename}' and associated data deleted"}
+
+
 @router.post("/{course_id}/generate-notes")
 async def generate_notes(
     course_id: int,

@@ -8,7 +8,7 @@ import FileUpload from '@/components/FileUpload';
 import {
   BookOpen, FileText, Brain, PenLine, ArrowLeft,
   Sparkles, Loader2, BookMarked, CheckCircle,
-  GraduationCap, Dumbbell, Lightbulb,
+  GraduationCap, Dumbbell, Lightbulb, Trash2,
 } from 'lucide-react';
 
 export default function CoursePage() {
@@ -53,6 +53,16 @@ export default function CoursePage() {
   const handleUpload = async (file: File) => {
     await coursesApi.upload(courseId, file);
     await loadCourse();
+  };
+
+  const handleDeleteFile = async (fileId: number, filename: string) => {
+    if (!confirm(`确定要删除「${filename}」吗？\n\n相关的笔记、知识点和例题也会一并删除，此操作不可撤销。`)) return;
+    try {
+      await coursesApi.deleteFile(courseId, fileId);
+      await loadCourse();
+    } catch (err: any) {
+      alert(err.message || '删除失败');
+    }
   };
 
   const startPolling = (checkFn: (course: Course) => boolean, extraCheck?: (course: Course) => boolean) => {
@@ -196,10 +206,17 @@ export default function CoursePage() {
                 <h3 className="font-semibold text-slate-800 mb-4">已上传课件</h3>
                 <div className="space-y-2">
                   {course.files!.map((f) => (
-                    <div key={f.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                    <div key={f.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg group">
                       <FileText className="w-5 h-5 text-blue-500" />
                       <span className="text-sm text-slate-700 flex-1">{f.filename}</span>
                       <span className="text-xs text-slate-400">{f.page_count} 页</span>
+                      <button
+                        onClick={() => handleDeleteFile(f.id, f.filename)}
+                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                        title="删除此课件"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                 </div>

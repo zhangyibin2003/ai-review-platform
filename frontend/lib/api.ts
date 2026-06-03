@@ -46,6 +46,8 @@ export const courses = {
   get: (id: number) => request(`/courses/${id}`),
   create: (name: string, teacher_id: number) =>
     request('/courses', { method: 'POST', body: JSON.stringify({ name, teacher_id }) }),
+  deleteFile: (courseId: number, fileId: number) =>
+    request(`/courses/${courseId}/files/${fileId}`, { method: 'DELETE' }),
   upload: async (courseId: number, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
